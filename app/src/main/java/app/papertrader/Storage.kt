@@ -17,10 +17,9 @@ class PortfolioStore(context: Context) {
     private val prefs = context.getSharedPreferences("portfolio", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun load(): PortfolioState =
+    fun load(): PortfolioState? =
         prefs.getString("state", null)
             ?.let { runCatching { json.decodeFromString<PortfolioState>(it) }.getOrNull() }
-            ?: PortfolioState()
 
     fun save(state: PortfolioState) {
         prefs.edit().putString("state", json.encodeToString(state)).apply()

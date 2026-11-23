@@ -14,18 +14,6 @@ data class Candle(
 data class Stock(val symbol: String, val name: String, val basePrice: Double, val vol: Double = 1.0)
 
 @Serializable
-data class Position(val symbol: String, val qty: Int, val avgPrice: Double)
-
-@Serializable
-data class TradeRecord(
-    val symbol: String,
-    val side: String,
-    val qty: Int,
-    val price: Double,
-    val time: Long,
-)
-
-@Serializable
 data class PriceAlert(
     val id: Long,
     val symbol: String,
@@ -34,25 +22,73 @@ data class PriceAlert(
     val triggered: Boolean = false,
 )
 
+/** Un acquisto (riga dei tab Azioni/Monetari del foglio). */
+@Serializable
+data class Lot(
+    val tab: String,
+    val name: String,
+    val isin: String,
+    val date: String,
+    val buyPrice: Double?,
+    val qty: Double,
+    val commission: Double?,
+    val buyValue: Double,
+    val price: Double?,
+    val value: Double?,
+    val diff: Double?,
+    val ret: Double?,
+    val net: Double?,
+)
+
+/** Riga di riepilogo (TOTALE INVESTITO, TOTALE CONTO...). */
+@Serializable
+data class Summary(
+    val label: String,
+    val qty: Double?,
+    val buyValue: Double?,
+    val value: Double?,
+    val diff: Double?,
+    val ret: Double?,
+    val net: Double?,
+)
+
+@Serializable
+data class MonthRow(
+    val month: String, // yyyy-MM
+    val netValue: Double?,
+    val variation: Double?,
+    val growth: Double?,
+)
+
+@Serializable
+data class Deposit(
+    val amount: Double,
+    val cumulative: Double?,
+    val date: String,
+    val source: String,
+    val note: String,
+)
+
+/** Fotografia dei dati letti dal foglio Balance. */
+@Serializable
+data class SheetSnapshot(
+    val lots: List<Lot>,
+    val summaries: List<Summary>,
+    val stampDuty: Double?,
+    val cash: Double,
+    val months: List<MonthRow>,
+    val deposits: List<Deposit>,
+    val importedAt: Long,
+)
+
 @Serializable
 data class PortfolioState(
-    val cash: Double = SEED_CASH,
-    val positions: List<Position> = SEED_POSITIONS,
-    val trades: List<TradeRecord> = emptyList(),
+    val snapshot: SheetSnapshot? = null,
     val alerts: List<PriceAlert> = emptyList(),
     val watchlist: List<String> = DEFAULT_WATCHLIST,
 )
 
-// Import una tantum dal foglio "Balance" (tab Azioni e Monetari), valori in EUR.
-const val SEED_CASH = 12_235.79
-val SEED_POSITIONS = listOf(
-    Position("VWCE", 663, 154.92),   // costo totale 102.713,17 EUR
-    Position("XEON", 89, 149.98),    // costo totale 13.348,18 EUR
-)
-
-/** Base per il P&L totale: costo delle posizioni + liquidità iniziale. */
-val START_CASH: Double = SEED_CASH + SEED_POSITIONS.sumOf { it.qty * it.avgPrice }
-
+/** Titoli del simulatore di mercato (watchlist e alert). */
 val UNIVERSE = listOf(
     Stock("VWCE", "Vanguard FTSE All-World (Acc)", 170.73),
     Stock("XEON", "Xtrackers EUR Overnight Rate", 150.84, vol = 0.02),
@@ -71,3 +107,5 @@ val DEFAULT_WATCHLIST = listOf("VWCE", "XEON", "AAPL", "NVDA", "SPY")
 
 fun money(v: Double): String = String.format(Locale.ITALY, "%,.2f €", v)
 fun pct(v: Double): String = String.format(Locale.US, "%+.2f%%", v)
+fun qtyText(v: Double): String =
+    if (v == Math.floor(v)) v.toLong().toString() else String.format(Locale.ITALY, "%.4f", v)

@@ -91,7 +91,7 @@ fun PaperTraderApp(vm: AppViewModel = viewModel()) {
     }) { pad ->
         NavHost(nav, startDestination = "market", modifier = Modifier.padding(pad)) {
             composable("market") { WatchlistScreen(vm, open) }
-            composable("portfolio") { PortfolioScreen(vm, open) }
+            composable("portfolio") { PortfolioScreen(vm) }
             composable("alerts") { AlertsScreen(vm) }
             composable("detail/{symbol}") { e ->
                 DetailScreen(vm, e.arguments?.getString("symbol").orEmpty()) { nav.popBackStack() }

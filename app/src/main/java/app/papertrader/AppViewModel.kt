@@ -13,7 +13,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private val engine = MarketEngine(viewModelScope)
     private val store = PortfolioStore(app)
 
-    private val _state = MutableStateFlow(store.load())
+    private val _state = MutableStateFlow(initialState())
     val state: StateFlow<PortfolioState> = _state.asStateFlow()
     val candles: StateFlow<Map<String, List<Candle>>> = engine.candles
 
@@ -22,50 +22,20 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { engine.candles.collect { checkAlerts(it) } }
     }
 
+    /** Dati di partenza: l'ultima lettura del foglio inclusa nell'app (asset), poi sostituiti dall'import. */
+    private fun seedSnapshot(): SheetSnapshot? = runCatching {
+        val body = app.assets.open("seed_tabs.json").bufferedReader().use { it.readText() }
+        SheetParser.parse(SheetsClient.parseBody(body))
+    }.getOrNull()
+
+    private fun initialState(): PortfolioState {
+        val saved = store.load() ?: PortfolioState()
+        return if (saved.snapshot == null) saved.copy(snapshot = seedSnapshot()) else saved
+    }
+
     private fun mutate(block: (PortfolioState) -> PortfolioState) {
         _state.update(block)
         store.save(_state.value)
-    }
-
-    private fun priceOf(symbol: String): Double? = candles.value[symbol]?.lastOrNull()?.close
-
-    /** Ritorna un messaggio di errore, oppure null se l'ordine è andato a buon fine. */
-    fun buy(symbol: String, qty: Int): String? {
-        val price = priceOf(symbol) ?: return "Prezzo non disponibile"
-        if (qty <= 0) return "Quantità non valida"
-        val cost = price * qty
-        val s = _state.value
-        if (cost > s.cash) return "Liquidità insufficiente"
-        mutate {
-            val existing = it.positions.find { p -> p.symbol == symbol }
-            val newPos = if (existing == null) Position(symbol, qty, price) else {
-                val total = existing.qty + qty
-                Position(symbol, total, (existing.avgPrice * existing.qty + cost) / total)
-            }
-            it.copy(
-                cash = it.cash - cost,
-                positions = it.positions.filter { p -> p.symbol != symbol } + newPos,
-                trades = listOf(TradeRecord(symbol, "BUY", qty, price, System.currentTimeMillis())) + it.trades,
-            )
-        }
-        return null
-    }
-
-    fun sell(symbol: String, qty: Int): String? {
-        val price = priceOf(symbol) ?: return "Prezzo non disponibile"
-        if (qty <= 0) return "Quantità non valida"
-        val pos = _state.value.positions.find { it.symbol == symbol }
-        if (pos == null || pos.qty < qty) return "Azioni insufficienti"
-        mutate {
-            val remaining = pos.qty - qty
-            it.copy(
-                cash = it.cash + price * qty,
-                positions = it.positions.filter { p -> p.symbol != symbol } +
-                    if (remaining > 0) listOf(pos.copy(qty = remaining)) else emptyList(),
-                trades = listOf(TradeRecord(symbol, "SELL", qty, price, System.currentTimeMillis())) + it.trades,
-            )
-        }
-        return null
     }
 
     fun toggleWatch(symbol: String) = mutate {
@@ -80,12 +50,13 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun removeAlert(id: Long) = mutate { it.copy(alerts = it.alerts.filter { a -> a.id != id }) }
 
-    fun reset() = mutate { PortfolioState() }
+    /** Torna ai dati inclusi nell'app. */
+    fun reset() = mutate { PortfolioState(snapshot = seedSnapshot()) }
 
     sealed interface ImportUi {
         data object Idle : ImportUi
         data object Loading : ImportUi
-        data class Preview(val data: ImportPreview) : ImportUi
+        data class Preview(val data: SheetSnapshot) : ImportUi
         data class Error(val message: String) : ImportUi
     }
 
@@ -96,7 +67,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun importFailed(msg: String) { _import.value = ImportUi.Error(msg) }
     fun importDismiss() { _import.value = ImportUi.Idle }
 
-    /** Legge il foglio e mostra l'anteprima; non modifica il portafoglio finché non confermi. */
+    /** Legge il foglio e mostra l'anteprima; non modifica nulla finché non confermi. */
     fun importFetch(accessToken: String) {
         _import.value = ImportUi.Loading
         viewModelScope.launch {
@@ -107,7 +78,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun importConfirm() {
         val p = (_import.value as? ImportUi.Preview)?.data ?: return
-        mutate { it.copy(cash = p.cash, positions = p.positions, trades = emptyList()) }
+        mutate { it.copy(snapshot = p) }
         _import.value = ImportUi.Idle
     }
 
