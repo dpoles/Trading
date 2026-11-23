@@ -82,6 +82,35 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun reset() = mutate { PortfolioState() }
 
+    sealed interface ImportUi {
+        data object Idle : ImportUi
+        data object Loading : ImportUi
+        data class Preview(val data: ImportPreview) : ImportUi
+        data class Error(val message: String) : ImportUi
+    }
+
+    private val _import = MutableStateFlow<ImportUi>(ImportUi.Idle)
+    val importState: StateFlow<ImportUi> = _import.asStateFlow()
+
+    fun importLoading() { _import.value = ImportUi.Loading }
+    fun importFailed(msg: String) { _import.value = ImportUi.Error(msg) }
+    fun importDismiss() { _import.value = ImportUi.Idle }
+
+    /** Legge il foglio e mostra l'anteprima; non modifica il portafoglio finché non confermi. */
+    fun importFetch(accessToken: String) {
+        _import.value = ImportUi.Loading
+        viewModelScope.launch {
+            _import.value = runCatching { SheetParser.parse(SheetsClient.fetch(accessToken)) }
+                .fold({ ImportUi.Preview(it) }, { ImportUi.Error(it.message ?: "Errore di lettura") })
+        }
+    }
+
+    fun importConfirm() {
+        val p = (_import.value as? ImportUi.Preview)?.data ?: return
+        mutate { it.copy(cash = p.cash, positions = p.positions, trades = emptyList()) }
+        _import.value = ImportUi.Idle
+    }
+
     private fun checkAlerts(all: Map<String, List<Candle>>) {
         val pending = _state.value.alerts.filter { !it.triggered }
         if (pending.isEmpty()) return
