@@ -38,21 +38,26 @@ class MarketEngine(scope: CoroutineScope) {
             val list = ArrayList<Candle>()
             for (i in 120 downTo 1) {
                 val open = price
-                val close = open * (1 + rnd.nextGaussian() * 0.006)
+                val close = open * (1 + rnd.nextGaussian() * 0.006 * s.vol)
                 val hi = maxOf(open, close) * (1 + rnd.nextDouble() * 0.003)
                 val lo = minOf(open, close) * (1 - rnd.nextDouble() * 0.003)
                 list += Candle(now - i * 10_000L, open, hi, lo, close)
                 price = close
             }
-            s.symbol to list
+            // Riscala la serie così l'ultimo prezzo coincide con basePrice.
+            val k = s.basePrice / list.last().close
+            s.symbol to list.map {
+                Candle(it.time, it.open * k, it.high * k, it.low * k, it.close * k)
+            }
         }
     }
 
     private fun step(newCandle: Boolean) {
         val now = System.currentTimeMillis()
-        _candles.value = _candles.value.mapValues { (_, list) ->
+        _candles.value = _candles.value.mapValues { (sym, list) ->
+            val vol = UNIVERSE.first { it.symbol == sym }.vol
             val last = list.last()
-            val close = last.close * (1 + rnd.nextGaussian() * 0.0015)
+            val close = last.close * (1 + rnd.nextGaussian() * 0.0015 * vol)
             val updated = last.copy(
                 high = maxOf(last.high, close),
                 low = minOf(last.low, close),
